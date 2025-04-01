@@ -1,0 +1,587 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+#install.packages("readxl")
+#install.packages("skimr")
+#install.packages("patchwork")
+#install.packages("tseries")
+#install.packages("forecast")
+#install.packages("vars")
+#install.packages("dynlm")
+library(dynlm)
+library(readxl)
+library(data.table)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(skimr)
+library(patchwork)
+library(tseries)
+library(forecast)
+library(vars)
+```
+# Data Preprocessing 
+
+```{r}
+
+
+
+cropurl <- "https://catalog.ourworldindata.org/explorers/agriculture/latest/crop_yields/crop_yields.csv"
+crop_yields <- fread(cropurl)
+rainearly <- read_excel("Rain1950-2014.xlsx")
+rainlate <- read_excel("Rain2015-2024.xlsx")
+temp <- read_excel("TempCelsius.xlsx")
+
+# View the first few rows
+head(crop_yields)
+
+rainearly
+rainlate
+temp <- temp %>% 
+  rename(country = Name)
+temp
+
+```
+## Precipitation Table formatting
+```{r}
+
+precipitation <- merge(rainearly, rainlate, by = "code", all = FALSE)
+colnames(precipitation) <- sub("-07", "", colnames(precipitation))
+
+precipitation <- precipitation %>%
+  rename(country = name.x)
+
+precipitation <- precipitation %>% 
+  dplyr::select(-code)
+
+
+precipitation[, as.character(1950:2024)] <- lapply(precipitation[, as.character(1950:2024)], as.integer) #Gotta include as.character cause R isn't smart and doesn't understand a number (grrrr)
+
+precipitation
+```
+
+
+
+
+
+## Pivoting so Countries are the majority of columns and the years are just one year (Transpose was googled)
+```{r}
+filtered_prec <- setNames(data.frame(t(precipitation[,-1])), precipitation[,1])
+
+filtered_prec <- cbind(year = as.integer(rownames(filtered_prec)), filtered_prec)
+rownames(filtered_prec) <- NULL # Cool lil trick
+
+filtered_prec[-1] <- lapply(filtered_prec[-1], as.integer)
+filtered_prec
+
+
+```
+## Same process from Temp just copied pasted
+```{r}
+temp <- temp %>% 
+  dplyr::select(-Code)
+
+
+temp[, as.character(1901:2023)] <- lapply(temp[, as.character(1901:2023)], as.double)
+
+temp
+```
+
+## Same Process as Precipitation with a few minor changes (Wanted to see hour extracting first worked)
+```{r}
+# This made it much easier, but wanted to keep my prior struggles up
+country_names <- temp$country
+
+
+filtered_temp <- as.data.frame(t(temp[, -1]))
+
+
+colnames(filtered_temp) <- country_names
+
+
+filtered_temp <- cbind(
+  year = as.integer(rownames(filtered_temp)),
+  filtered_temp)
+rownames(filtered_temp) <- NULL
+
+filtered_temp
+
+```
+
+## Creating the 5 main yield tables for the selected Countries
+```{r}
+# Select relevant columns
+wheat_data <- crop_yields %>%
+  dplyr::select(country, year, wheat_yield)
+
+rice_data <- crop_yields %>%
+  dplyr::select(country, year, rice_yield)
+
+potato_data <- crop_yields %>%
+  dplyr::select(country, year, potato_yield)
+
+cotton_data <- crop_yields %>%
+  dplyr::select(country, year, cotton_yield)
+
+maize_data <- crop_yields %>%
+  dplyr::select(country, year, maize_yield)
+
+
+# It's Pivot Time (Insert Friends Meme)
+
+wheat_data <- wheat_data %>%
+  pivot_wider(names_from = country, values_from = wheat_yield) %>% 
+  dplyr::select('year','Australia', 'Canada', 'Germany', 'France', 'India', 'Mexico', 'Poland', 'United States')
+
+rice_data <- rice_data %>%
+  pivot_wider(names_from = country, values_from = rice_yield) %>% 
+  dplyr::select('year','Australia', 'Canada', 'Germany', 'France', 'India', 'Mexico', 'Poland', 'United States')
+
+potato_data <- potato_data %>%
+  pivot_wider(names_from = country, values_from = potato_yield) %>% 
+  dplyr::select('year','Australia', 'Canada', 'Germany', 'France', 'India', 'Mexico', 'Poland', 'United States')
+
+cotton_data <- cotton_data %>%
+  pivot_wider(names_from = country, values_from = cotton_yield) %>% 
+  dplyr::select('year','Australia', 'Canada', 'Germany', 'France', 'India', 'Mexico', 'Poland', 'United States')
+
+maize_data <- maize_data %>%
+  pivot_wider(names_from = country, values_from = maize_yield) %>% 
+  dplyr::select('year','Australia', 'Canada', 'Germany', 'France', 'India', 'Mexico', 'Poland', 'United States')
+
+wheat_data
+rice_data
+potato_data
+cotton_data
+maize_data
+```
+
+
+
+## Final Tables
+
+```{r}
+
+filtered_temp # Measured in Celcius
+filtered_prec # Measured in MM
+wheat_data #Yields are measured in tonnes per hectare (Whatever tf that means)
+rice_data #Yields are measured in tonnes per hectare
+potato_data #Yields are measured in tonnes per hectare
+cotton_data #Yields are measured in tonnes per hectare
+maize_data #Yields are measured in tonnes per hectare
+```
+## Simple EDA
+
+```{r}
+
+
+prec_long <- filtered_prec %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Precipitation") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+temp_long <- filtered_temp %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Temperature") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+wheat_long <- wheat_data %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Wheat_Yield") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+rice_long <- rice_data %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Rice_Yield") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+potato_long <- potato_data %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Potato_Yield") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+cotton_long <- cotton_data %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Cotton_Yield") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+maize_long <- maize_data %>%
+  pivot_longer(cols = -year, names_to = "country", values_to = "Maize_Yield") %>%
+  drop_na() %>%
+  filter(year >= 1960)
+
+
+```
+
+
+```{r}
+CountryPrecipitation <- ggplot(prec_long, aes(x = year, y = as.numeric(Precipitation), color = country)) +
+  geom_line() +
+  labs(title = "Annual Precipitation by Country (1961-2021)",
+       x = "Year",
+       y = "Precipitation (mm)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1961, 2021, by = 5)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+CountryPrecipitation
+```
+
+```{r}
+CountryTemp <- ggplot(temp_long, aes(x = year, y = as.numeric(Temperature), color = country)) +
+  geom_line() +
+  labs(title = "Annual Temperature by Country (1900-2021)",
+       x = "Year",
+       y = "Temperature (Celcius)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1900, 2021, by = 5)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+CountryTemp
+```
+```{r}
+annualWheat <- ggplot(wheat_long, aes(x = year, y = as.numeric(Wheat_Yield), color = country)) +
+  geom_line() +
+  labs(title = "Annual Wheat Yield  (1961-2021)",
+       x = "Year",
+       y = "Wheat_Yield (Tonnes per Hectare)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1961, 2021, by = 3)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+annualWheat
+```
+```{r}
+annualRice <- ggplot(rice_long, aes(x = year, y = as.numeric(Rice_Yield), color = country)) +
+  geom_line() +
+  labs(title = "Annual Rice Yield  (1961-2021)",
+       x = "Year",
+       y = "Rice_Yield (Tonnes per Hectare)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1961, 2021, by = 3)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+annualRice
+```
+
+```{r}
+annualPotato <- ggplot(potato_long , aes(x = year, y = as.numeric(Potato_Yield), color = country)) +
+  geom_line() +
+  labs(title = "Annual Potato Yield  (1961-2021)",
+       x = "Year",
+       y = "Potato_Yield (Tonnes per Hectare)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1961, 2021, by = 3)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+annualPotato
+```
+
+```{r}
+annualCotton <- ggplot(cotton_long , aes(x = year, y = as.numeric(Cotton_Yield), color = country)) +
+  geom_line() +
+  labs(title = "Annual Cotton Yield  (1961-2021)",
+       x = "Year",
+       y = "Cotton_Yield (Tonnes per Hectare)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1961, 2021, by = 3)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+annualCotton
+```
+
+```{r}
+annualMaize <- ggplot(maize_long , aes(x = year, y = as.numeric(Maize_Yield), color = country)) +
+  geom_line() +
+  labs(title = "Annual Maize Yield  (1961-2021)",
+       x = "Year",
+       y = "Maize_Yield (Tonnes per Hectare)",
+       color = "Country") +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(1961, 2021, by = 3)) +
+  theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
+annualMaize
+```
+
+
+
+
+```{r}
+
+CountryPrecipitation + plot_spacer() + CountryTemp
+
+```
+
+```{r}
+
+library(tseries)
+
+adf_temp <- adf.test(temp_long$Temperature, alternative = "stationary")
+adf_prec <- adf.test(prec_long$Precipitation, alternative = "stationary")
+adf_wheat <- adf.test(wheat_long$Wheat_Yield, alternative = "stationary")
+adf_rice <- adf.test(rice_long$Rice_Yield, alternative = "stationary")
+adf_potato <- adf.test(potato_long$Potato_Yield, alternative = "stationary")
+adf_cotton <- adf.test(cotton_long$Cotton_Yield, alternative = "stationary")
+adf_maize <- adf.test(maize_long$Maize_Yield, alternative = "stationary")
+
+print(adf_temp)
+print(adf_prec)
+print(adf_wheat)
+print(adf_rice)
+print(adf_potato) # Non-Stationary so it might have Trend or Seasonality
+print(adf_cotton)
+print(adf_maize)
+
+```
+
+## Differencing Non-Stationary Models
+
+```{r}
+
+potato_long$Potato_Yield_diff <- c(NA, diff(potato_long$Potato_Yield))
+
+potato_long_diff <- potato_long$Potato_Yield_diff[!is.na(potato_long$Potato_Yield_diff)]
+
+# Perform the ADF test on the differenced data
+adf.test(potato_long_diff, alternative = "stationary")
+```
+```{r}
+
+merged_data <- merge(wheat_long, temp_long, by = c("country", "year"))
+merged_data <- merge(merged_data, prec_long, by = c("country", "year"))
+merged_data <- merge(merged_data, rice_long, by = c("country", "year"))
+merged_data <- merge(merged_data, potato_long, by = c("country", "year"))
+merged_data <- merge(merged_data, cotton_long, by = c("country", "year"))
+merged_data <- merge(merged_data, maize_long, by = c("country", "year"))
+head(merged_data)
+
+```
+
+
+```{r}
+
+
+# ACF and PACF for Temperature
+acf(temp_long$Temperature, main="ACF of Temperature")
+pacf(temp_long$Temperature, main="PACF of Temperature")
+
+# ACF and PACF for Precipitation
+acf(prec_long$Precipitation, main="ACF of Precipitation")
+pacf(prec_long$Precipitation, main="PACF of Precipitation")
+
+# ACF and PACF for Wheat Yield
+acf(wheat_long$Wheat_Yield, main="ACF of Wheat Yield")
+pacf(wheat_long$Wheat_Yield, main="PACF of Wheat Yield")
+
+# ACF and PACF for Rice Yield
+acf(rice_long$Rice_Yield, main="ACF of Rice Yield")
+pacf(rice_long$Rice_Yield, main="PACF of Rice Yield")
+
+# ACF and PACF for Potato Yield
+acf(potato_long$Potato_Yield, main="ACF of Potato Yield")
+pacf(potato_long$Potato_Yield, main="PACF of Potato Yield")
+
+# ACF and PACF for Cotton Yield
+acf(cotton_long$Cotton_Yield, main="ACF of Cotton Yield")
+pacf(cotton_long$Cotton_Yield, main="PACF of Cotton Yield")
+
+# ACF and PACF for Maize Yield
+acf(maize_long$Maize_Yield, main="ACF of Maize Yield")
+pacf(maize_long$Maize_Yield, main="PACF of Maize Yield")
+
+
+```
+
+```{r}
+
+ccf(temp_long$Temperature, wheat_long$Wheat_Yield, main="Cross-Correlation: Temperature vs Wheat Yield")
+ccf(prec_long$Precipitation, wheat_long$Wheat_Yield, main="Cross-Correlation: Precipitation vs Wheat Yield")
+
+ccf(temp_long$Temperature, rice_long$Rice_Yield, main="Cross-Correlation: Temperature vs Rice Yield")
+ccf(prec_long$Precipitation, rice_long$Rice_Yield, main="Cross-Correlation: Precipitation vs Rice Yield")
+
+ccf(temp_long$Temperature, potato_long$Potato_Yield, main="Cross-Correlation: Temperature vs Potato Yield")
+ccf(prec_long$Precipitation, potato_long$Potato_Yield, main="Cross-Correlation: Precipitation vs Potato Yield")
+
+ccf(temp_long$Temperature, cotton_long$Cotton_Yield, main="Cross-Correlation: Temperature vs Cotton Yield")
+ccf(prec_long$Precipitation, cotton_long$Cotton_Yield, main="Cross-Correlation: Precipitation vs Cotton Yield")
+
+ccf(temp_long$Temperature, maize_long$Maize_Yield, main="Cross-Correlation: Temperature vs Maize Yield")
+ccf(prec_long$Precipitation, maize_long$Maize_Yield, main="Cross-Correlation: Precipitation vs Maize Yield")
+
+
+
+```
+```{r}
+
+# Create lagged variables for Temperature
+merged_data$Temp_Lag1 <- lag(merged_data$Temperature, 1)
+merged_data$Temp_Lag2 <- lag(merged_data$Temperature, 2)
+merged_data$Temp_Lag3 <- lag(merged_data$Temperature, 3)
+
+# Check the first few rows of merged_data
+merged_data
+```
+
+
+```{r}
+# Create lagged variables for Temperature (lag 1 to 3 years)
+merged_data$Temp_Lag1 <- lag(merged_data$Temperature, 1)
+merged_data$Temp_Lag2 <- lag(merged_data$Temperature, 2)
+merged_data$Temp_Lag3 <- lag(merged_data$Temperature, 3)
+
+# Create lagged variables for Precipitation (lag 1 to 3 years)
+merged_data$Prec_Lag1 <- lag(merged_data$Precipitation, 1)
+merged_data$Prec_Lag2 <- lag(merged_data$Precipitation, 2)
+merged_data$Prec_Lag3 <- lag(merged_data$Precipitation, 3)
+
+# Create lagged variables for Wheat Yield (lag 1 to 3 years)
+merged_data$Wheat_Yield_Lag1 <- lag(merged_data$Wheat_Yield, 1)
+merged_data$Wheat_Yield_Lag2 <- lag(merged_data$Wheat_Yield, 2)
+merged_data$Wheat_Yield_Lag3 <- lag(merged_data$Wheat_Yield, 3)
+
+# Create lagged variables for Rice Yield (lag 1 to 3 years)
+merged_data$Rice_Yield_Lag1 <- lag(merged_data$Rice_Yield, 1)
+merged_data$Rice_Yield_Lag2 <- lag(merged_data$Rice_Yield, 2)
+merged_data$Rice_Yield_Lag3 <- lag(merged_data$Rice_Yield, 3)
+
+# Create lagged variables for Potato Yield (lag 1 to 3 years)
+merged_data$Potato_Yield_Lag1 <- lag(merged_data$Potato_Yield, 1)
+merged_data$Potato_Yield_Lag2 <- lag(merged_data$Potato_Yield, 2)
+merged_data$Potato_Yield_Lag3 <- lag(merged_data$Potato_Yield, 3)
+
+# Create lagged variables for Cotton Yield (lag 1 to 3 years)
+merged_data$Cotton_Yield_Lag1 <- lag(merged_data$Cotton_Yield, 1)
+merged_data$Cotton_Yield_Lag2 <- lag(merged_data$Cotton_Yield, 2)
+merged_data$Cotton_Yield_Lag3 <- lag(merged_data$Cotton_Yield, 3)
+
+# Create lagged variables for Maize Yield (lag 1 to 3 years)
+merged_data$Maize_Yield_Lag1 <- lag(merged_data$Maize_Yield, 1)
+merged_data$Maize_Yield_Lag2 <- lag(merged_data$Maize_Yield, 2)
+merged_data$Maize_Yield_Lag3 <- lag(merged_data$Maize_Yield, 3)
+
+# Check the first few rows of the merged data with lags
+head(merged_data)
+
+
+```
+
+
+```{r}
+library(dynlm)
+
+# Wheat model (already provided)
+dlm_wheat <- dynlm(
+  Wheat_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
+  Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
+  data = merged_data
+)
+
+# Rice model
+dlm_rice <- dynlm(
+  Rice_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
+  Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
+  data = merged_data
+)
+
+# Potato model
+dlm_potato <- dynlm(
+  Potato_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
+  Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
+  data = merged_data
+)
+
+# Cotton model
+dlm_cotton <- dynlm(
+  Cotton_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
+  Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
+  data = merged_data
+)
+
+# Maize model
+dlm_maize <- dynlm(
+  Maize_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
+  Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
+  data = merged_data
+)
+
+crop_models <- list(
+  Wheat = dlm_wheat,
+  Rice = dlm_rice,
+  Potato = dlm_potato,
+  Cotton = dlm_cotton,
+  Maize = dlm_maize
+)
+
+lapply(crop_models, summary)
+
+
+```
+
+
+# Let's Try some Prediction
+```{r}
+
+set.seed(123)
+filtered_data <- merged_data %>% filter(year >= 1990) %>% arrange(year)
+n_rows <- nrow(filtered_data)
+train_rows <- round(0.80 * n_rows)
+train_data <- filtered_data %>% slice(1:train_rows)
+test_data <- filtered_data %>% slice((train_rows + 1):n_rows)
+
+# Fit a linear regression model on the training data
+model <- lm(Wheat_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 +
+                                  Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
+            data = train_data)
+
+# Summary of the model
+summary(model)
+
+
+
+
+```
+
+```{r}
+# Predict on test data
+predictions <- predict(model, newdata = test_data)
+
+# Add the predictions to the test data for comparison
+test_data$predictions <- predictions
+
+```
+
+
+```{r}
+# Plot actual vs predicted values
+ggplot(test_data) +
+  geom_line(aes(x = year, y = Wheat_Yield, color = "Actual"), linewidth = 1) +
+  geom_line(aes(x = year, y = predictions, color = "Predicted"), linewidth = 1) +
+  scale_color_manual(values = c("Actual" = "blue", "Predicted" = "red")) +
+  labs(title = "Actual vs Predicted Wheat Yield (Test Set)", x = "Year", y = "Wheat Yield (tons/ha)") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+```
+
+```{r}
+# Calculate RMSE (Root Mean Squared Error)
+rmse <- sqrt(mean((test_data$Wheat_Yield - test_data$predictions)^2))
+print(paste("RMSE: ", round(rmse, 2)))
+
+# Calculate MAE (Mean Absolute Error)
+mae <- mean(abs(test_data$Wheat_Yield - test_data$predictions))
+print(paste("MAE: ", round(mae, 2)))
+
+```
+
+
+
+
+
+
+
+
