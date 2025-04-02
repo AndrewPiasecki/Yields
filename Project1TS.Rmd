@@ -1,8 +1,35 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: "Analysis of Temperature and Precipitation Effects on Agricultural Yields"
+output:
+  html_notebook:
+    toc: yes
+    toc_float: yes
+    theme: united
+  html_document:
+    toc: yes
+    df_print: paged
+date: "2025-03-31"
 ---
 
+# Introduction
+
+This report investigates the critical research question: How do temperature and precipitation changes affect agricultural yields? Understanding these relationships is vital for several reasons:
+
+* Food Security: With global population projected to only increase, optimizing agricultural productivity is essential.
+
+* Climate Change Adaptation: Farmers and policymakers need data-driven insights to adapt to changing climate patterns.
+
+* Economic Stability: Agriculture contributes significantly to many nations' GDPs and employment.
+
+The analysis focuses on five key crops (wheat, rice, potatoes, cotton, and maize) across eight countries (Australia, Canada, Germany, France, India, Mexico, Poland, and the United States) from 1961-2021.
+
+* This is a small selection from 20+ crops and all countries in the world
+
+
+# PreProcessing
+
+
+## Import Packages and Libraries
 ```{r}
 #install.packages("readxl")
 #install.packages("skimr")
@@ -22,8 +49,11 @@ library(patchwork)
 library(tseries)
 library(forecast)
 library(vars)
+library(tseries)
 ```
-# Data Preprocessing 
+
+
+## Data Preprocessing
 
 ```{r}
 
@@ -35,9 +65,8 @@ rainearly <- read_excel("Rain1950-2014.xlsx")
 rainlate <- read_excel("Rain2015-2024.xlsx")
 temp <- read_excel("TempCelsius.xlsx")
 
-# View the first few rows
-head(crop_yields)
 
+crop_yields
 rainearly
 rainlate
 temp <- temp %>% 
@@ -45,6 +74,8 @@ temp <- temp %>%
 temp
 
 ```
+
+
 ## Precipitation Table formatting
 ```{r}
 
@@ -64,10 +95,7 @@ precipitation
 ```
 
 
-
-
-
-## Pivoting so Countries are the majority of columns and the years are just one year (Transpose was googled)
+## Pivoting the Countries via Transpose
 ```{r}
 filtered_prec <- setNames(data.frame(t(precipitation[,-1])), precipitation[,1])
 
@@ -77,9 +105,10 @@ rownames(filtered_prec) <- NULL # Cool lil trick
 filtered_prec[-1] <- lapply(filtered_prec[-1], as.integer)
 filtered_prec
 
-
 ```
-## Same process from Temp just copied pasted
+
+
+## Temperature Table Formatting
 ```{r}
 temp <- temp %>% 
   dplyr::select(-Code)
@@ -90,7 +119,7 @@ temp[, as.character(1901:2023)] <- lapply(temp[, as.character(1901:2023)], as.do
 temp
 ```
 
-## Same Process as Precipitation with a few minor changes (Wanted to see hour extracting first worked)
+## Temperature Table Formatting pt.2
 ```{r}
 # This made it much easier, but wanted to keep my prior struggles up
 country_names <- temp$country
@@ -111,9 +140,11 @@ filtered_temp
 
 ```
 
-## Creating the 5 main yield tables for the selected Countries
+## Yield Tables and Ross is Pivoting
 ```{r}
-# Select relevant columns
+
+# Quick note to self, use dplyr because it seems select() has some issues with another package
+
 wheat_data <- crop_yields %>%
   dplyr::select(country, year, wheat_yield)
 
@@ -159,8 +190,6 @@ cotton_data
 maize_data
 ```
 
-
-
 ## Final Tables
 
 ```{r}
@@ -173,10 +202,13 @@ potato_data #Yields are measured in tonnes per hectare
 cotton_data #Yields are measured in tonnes per hectare
 maize_data #Yields are measured in tonnes per hectare
 ```
-## Simple EDA
+
+
+## Pivoting (Again)
 
 ```{r}
 
+# After a few hours of testing I saw I NEEDED TO PIVOT AGAIN
 
 prec_long <- filtered_prec %>%
   pivot_longer(cols = -year, names_to = "country", values_to = "Precipitation") %>%
@@ -217,6 +249,33 @@ maize_long <- maize_data %>%
 ```
 
 
+# Testing and Insights
+
+The methodology employed several time series techniques:
+
+* Stationarity Testing: Augmented Dickey-Fuller tests to check for non-stationarity
+
+* Autocorrelation Analysis: ACF/PACF plots to identify temporal patterns
+
+* Cross-Correlation: CCF plots to examine lead-lag relationships 
+
+* Dynamic Linear Models (DLM): Regression models incorporating lagged effects
+
+## EDA
+
+```{r}
+
+summary(prec_long)
+summary(temp_long)
+summary(wheat_long)
+summary(rice_long)
+summary(potato_long)
+summary(cotton_long)
+summary(maize_long)
+```
+
+### Annual Precipitation by Country
+
 ```{r}
 CountryPrecipitation <- ggplot(prec_long, aes(x = year, y = as.numeric(Precipitation), color = country)) +
   geom_line() +
@@ -230,6 +289,9 @@ CountryPrecipitation <- ggplot(prec_long, aes(x = year, y = as.numeric(Precipita
 CountryPrecipitation
 ```
 
+
+### Annual Temperature by Country
+
 ```{r}
 CountryTemp <- ggplot(temp_long, aes(x = year, y = as.numeric(Temperature), color = country)) +
   geom_line() +
@@ -242,6 +304,9 @@ CountryTemp <- ggplot(temp_long, aes(x = year, y = as.numeric(Temperature), colo
   theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
 CountryTemp
 ```
+
+
+### Annual Wheat Yield
 ```{r}
 annualWheat <- ggplot(wheat_long, aes(x = year, y = as.numeric(Wheat_Yield), color = country)) +
   geom_line() +
@@ -267,6 +332,8 @@ annualRice <- ggplot(rice_long, aes(x = year, y = as.numeric(Rice_Yield), color 
 annualRice
 ```
 
+### Annual Potato Yield
+
 ```{r}
 annualPotato <- ggplot(potato_long , aes(x = year, y = as.numeric(Potato_Yield), color = country)) +
   geom_line() +
@@ -279,6 +346,8 @@ annualPotato <- ggplot(potato_long , aes(x = year, y = as.numeric(Potato_Yield),
   theme(legend.position = "bottom", axis.text.x = element_text(angle = 90))
 annualPotato
 ```
+
+### Annual Cotton Yield
 
 ```{r}
 annualCotton <- ggplot(cotton_long , aes(x = year, y = as.numeric(Cotton_Yield), color = country)) +
@@ -293,6 +362,10 @@ annualCotton <- ggplot(cotton_long , aes(x = year, y = as.numeric(Cotton_Yield),
 annualCotton
 ```
 
+
+## Annual Maize Yield
+
+
 ```{r}
 annualMaize <- ggplot(maize_long , aes(x = year, y = as.numeric(Maize_Yield), color = country)) +
   geom_line() +
@@ -306,19 +379,9 @@ annualMaize <- ggplot(maize_long , aes(x = year, y = as.numeric(Maize_Yield), co
 annualMaize
 ```
 
-
-
-
-```{r}
-
-CountryPrecipitation + plot_spacer() + CountryTemp
-
-```
+## ADF test
 
 ```{r}
-
-library(tseries)
-
 adf_temp <- adf.test(temp_long$Temperature, alternative = "stationary")
 adf_prec <- adf.test(prec_long$Precipitation, alternative = "stationary")
 adf_wheat <- adf.test(wheat_long$Wheat_Yield, alternative = "stationary")
@@ -337,7 +400,7 @@ print(adf_maize)
 
 ```
 
-## Differencing Non-Stationary Models
+### Differencing Non-Stationary Models
 
 ```{r}
 
@@ -345,7 +408,7 @@ potato_long$Potato_Yield_diff <- c(NA, diff(potato_long$Potato_Yield))
 
 potato_long_diff <- potato_long$Potato_Yield_diff[!is.na(potato_long$Potato_Yield_diff)]
 
-# Perform the ADF test on the differenced data
+# Potatos man, why aren't you stationary
 adf.test(potato_long_diff, alternative = "stationary")
 ```
 ```{r}
@@ -360,40 +423,43 @@ head(merged_data)
 
 ```
 
+## ACF and PACF
 
 ```{r}
 
+# Thank goodness for the guy who invinted copy/paste
 
-# ACF and PACF for Temperature
 acf(temp_long$Temperature, main="ACF of Temperature")
 pacf(temp_long$Temperature, main="PACF of Temperature")
 
-# ACF and PACF for Precipitation
+
 acf(prec_long$Precipitation, main="ACF of Precipitation")
 pacf(prec_long$Precipitation, main="PACF of Precipitation")
 
-# ACF and PACF for Wheat Yield
+
 acf(wheat_long$Wheat_Yield, main="ACF of Wheat Yield")
 pacf(wheat_long$Wheat_Yield, main="PACF of Wheat Yield")
 
-# ACF and PACF for Rice Yield
+
 acf(rice_long$Rice_Yield, main="ACF of Rice Yield")
 pacf(rice_long$Rice_Yield, main="PACF of Rice Yield")
 
-# ACF and PACF for Potato Yield
+
 acf(potato_long$Potato_Yield, main="ACF of Potato Yield")
 pacf(potato_long$Potato_Yield, main="PACF of Potato Yield")
 
-# ACF and PACF for Cotton Yield
+
 acf(cotton_long$Cotton_Yield, main="ACF of Cotton Yield")
 pacf(cotton_long$Cotton_Yield, main="PACF of Cotton Yield")
 
-# ACF and PACF for Maize Yield
+
 acf(maize_long$Maize_Yield, main="ACF of Maize Yield")
 pacf(maize_long$Maize_Yield, main="PACF of Maize Yield")
 
 
 ```
+
+## Cross-Correlation Plots
 
 ```{r}
 
@@ -415,93 +481,86 @@ ccf(prec_long$Precipitation, maize_long$Maize_Yield, main="Cross-Correlation: Pr
 
 
 ```
+
+## Creating the Lags Yo
+
 ```{r}
 
-# Create lagged variables for Temperature
+# 3 years of lagged variables cause I thought that was about right
+
 merged_data$Temp_Lag1 <- lag(merged_data$Temperature, 1)
 merged_data$Temp_Lag2 <- lag(merged_data$Temperature, 2)
 merged_data$Temp_Lag3 <- lag(merged_data$Temperature, 3)
 
-# Check the first few rows of merged_data
-merged_data
-```
 
-
-```{r}
-# Create lagged variables for Temperature (lag 1 to 3 years)
-merged_data$Temp_Lag1 <- lag(merged_data$Temperature, 1)
-merged_data$Temp_Lag2 <- lag(merged_data$Temperature, 2)
-merged_data$Temp_Lag3 <- lag(merged_data$Temperature, 3)
-
-# Create lagged variables for Precipitation (lag 1 to 3 years)
 merged_data$Prec_Lag1 <- lag(merged_data$Precipitation, 1)
 merged_data$Prec_Lag2 <- lag(merged_data$Precipitation, 2)
 merged_data$Prec_Lag3 <- lag(merged_data$Precipitation, 3)
 
-# Create lagged variables for Wheat Yield (lag 1 to 3 years)
+
 merged_data$Wheat_Yield_Lag1 <- lag(merged_data$Wheat_Yield, 1)
 merged_data$Wheat_Yield_Lag2 <- lag(merged_data$Wheat_Yield, 2)
 merged_data$Wheat_Yield_Lag3 <- lag(merged_data$Wheat_Yield, 3)
 
-# Create lagged variables for Rice Yield (lag 1 to 3 years)
+
 merged_data$Rice_Yield_Lag1 <- lag(merged_data$Rice_Yield, 1)
 merged_data$Rice_Yield_Lag2 <- lag(merged_data$Rice_Yield, 2)
 merged_data$Rice_Yield_Lag3 <- lag(merged_data$Rice_Yield, 3)
 
-# Create lagged variables for Potato Yield (lag 1 to 3 years)
+
 merged_data$Potato_Yield_Lag1 <- lag(merged_data$Potato_Yield, 1)
 merged_data$Potato_Yield_Lag2 <- lag(merged_data$Potato_Yield, 2)
 merged_data$Potato_Yield_Lag3 <- lag(merged_data$Potato_Yield, 3)
 
-# Create lagged variables for Cotton Yield (lag 1 to 3 years)
+
 merged_data$Cotton_Yield_Lag1 <- lag(merged_data$Cotton_Yield, 1)
 merged_data$Cotton_Yield_Lag2 <- lag(merged_data$Cotton_Yield, 2)
 merged_data$Cotton_Yield_Lag3 <- lag(merged_data$Cotton_Yield, 3)
 
-# Create lagged variables for Maize Yield (lag 1 to 3 years)
+
 merged_data$Maize_Yield_Lag1 <- lag(merged_data$Maize_Yield, 1)
 merged_data$Maize_Yield_Lag2 <- lag(merged_data$Maize_Yield, 2)
 merged_data$Maize_Yield_Lag3 <- lag(merged_data$Maize_Yield, 3)
 
-# Check the first few rows of the merged data with lags
+
 head(merged_data)
 
 
 ```
 
+## Dynamic Linear Models
 
 ```{r}
-library(dynlm)
 
-# Wheat model (already provided)
+
 dlm_wheat <- dynlm(
   Wheat_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
   Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
   data = merged_data
 )
 
-# Rice model
+
 dlm_rice <- dynlm(
   Rice_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
   Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
   data = merged_data
 )
 
-# Potato model
+
 dlm_potato <- dynlm(
   Potato_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
   Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
   data = merged_data
 )
 
-# Cotton model
+
 dlm_cotton <- dynlm(
   Cotton_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
   Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
   data = merged_data
 )
 
-# Maize model
+
 dlm_maize <- dynlm(
   Maize_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 + 
   Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
@@ -516,13 +575,106 @@ crop_models <- list(
   Maize = dlm_maize
 )
 
-lapply(crop_models, summary)
+lapply(crop_models, summary) # New tool I found, perty cool
 
 
 ```
 
+# Results
 
-# Let's Try some Prediction
+## EDA
+
+Crop Yields:
+
+* Wheat: Steady increase (2-4x higher yields since 1960)
+
+* Rice: Similar growth pattern, especially pronounced in India
+
+* Potatoes: More volatile with recent stagnation in some countries
+
+* Cotton: Significant increases in the US and India
+
+* Maize: Consistent growth across most countries
+
+## Lagged Effects (Cross Correlation)
+
+The cross-correlation analysis showed:
+
+* Temperature shows strongest present time and 1-year lag effects
+
+* Precipitation effects often appear with 1-2 year lags
+
+* Wheat and maize show the clearest climate relationships
+
+
+
+## DLM findings
+
+The findings were all very small and minute, but still aplicable:
+
+* Current-year temperature has negative effects across all crops (Very Small)
+
+* 1-year lagged temperature shows compensatory positive effects (Still Very Small)
+
+* Precipitation effects are positive (Small Once Again)
+
+* Wheat and maize models show strongest explanatory power (R^2 which is my favorite)
+
+
+## Key Findings
+
+Temperature Effects: 
+
+* Current-year warming reduces yields, but following years often show compensatory growth, this suggest some crop adaptation.
+
+
+Precipitation Timing: 
+
+* The lagged precipitation effects indicate soil moisture retention impacts future growing seasons.
+
+
+Crop Vulnerability: 
+
+* Potatoes show the strongest negative temperature sensitivity, while wheat and maize demonstrate more climate resilience.
+
+
+
+# Conclusion
+
+
+## Policy Implications
+
+1. Adaptive Farming: Encourage crop rotation strategies that account for 1-2 year climate lag effects
+
+2. Irrigation Investment: Prioritize water management in regions showing precipitation declines
+
+3. Breeding Programs: Focus on developing temperature-resilient varieties, especially for potatoes (since they aren't very temperature resilient)
+
+
+## Limitations and Future Research
+
+### Limitations: 
+
+* TECHNOLOGY: There aren't really accounting for technological improvements
+
+* Major Weather: Excludes extreme weather events
+
+
+### Future directions:
+
+* Incorporate monthly climate data
+
+* Add soil quality and irrigation variables
+
+* Analyze climate change scenario projections
+
+
+This analysis demonstrates that climate variables indeed have significant lagged effects on agricultural productivity, with important variations across crop types. These findings can inform both short-term agricultural planning and long-term climate adaptation strategies. While not completely accurate, this analysis helps the reader and farmers understand the difference that planetary occurrences has on agricultural life. 
+
+
+# For Fun Prediction (I tried)
+
+## Let's Try some Prediction
 ```{r}
 
 set.seed(123)
@@ -532,12 +684,12 @@ train_rows <- round(0.80 * n_rows)
 train_data <- filtered_data %>% slice(1:train_rows)
 test_data <- filtered_data %>% slice((train_rows + 1):n_rows)
 
-# Fit a linear regression model on the training data
+
 model <- lm(Wheat_Yield ~ Temperature + Temp_Lag1 + Temp_Lag2 + Temp_Lag3 +
                                   Precipitation + Prec_Lag1 + Prec_Lag2 + Prec_Lag3, 
             data = train_data)
 
-# Summary of the model
+
 summary(model)
 
 
@@ -545,18 +697,21 @@ summary(model)
 
 ```
 
+## Predict on test data
+
 ```{r}
-# Predict on test data
+
 predictions <- predict(model, newdata = test_data)
 
-# Add the predictions to the test data for comparison
+
 test_data$predictions <- predictions
 
 ```
 
+## Plot actual vs predicted values
 
 ```{r}
-# Plot actual vs predicted values
+
 ggplot(test_data) +
   geom_line(aes(x = year, y = Wheat_Yield, color = "Actual"), linewidth = 1) +
   geom_line(aes(x = year, y = predictions, color = "Predicted"), linewidth = 1) +
@@ -567,12 +722,14 @@ ggplot(test_data) +
 
 ```
 
+## Calculate RMSE and MAE (Only One)
+
 ```{r}
-# Calculate RMSE (Root Mean Squared Error)
+
 rmse <- sqrt(mean((test_data$Wheat_Yield - test_data$predictions)^2))
 print(paste("RMSE: ", round(rmse, 2)))
 
-# Calculate MAE (Mean Absolute Error)
+
 mae <- mean(abs(test_data$Wheat_Yield - test_data$predictions))
 print(paste("MAE: ", round(mae, 2)))
 
